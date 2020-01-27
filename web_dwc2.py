@@ -426,6 +426,10 @@ class web_dwc2:
 			"next": 0
 		}
 
+		#	whitespace uploads via nfs/samba
+		for file in os.listdir(path_):
+			os.rename(os.path.join(path_, file), os.path.join(path_, file.replace(' ', '_')))
+
 		#	if rrf is requesting directory, it has to be there.
 		if not os.path.exists(path_):
 			os.makedirs(path_)
@@ -437,7 +441,7 @@ class web_dwc2:
 				"type": "d" if os.path.isdir(el_path) else "f" ,
 				"name": str(el_) ,
 				"size": os.stat(el_path).st_size ,
-				"date": datetime.datetime.utcfromtimestamp( os.stat(el_path).st_mtime ).strftime("%Y-%m-%dT%H:%M:%S")
+				"date": datetime.datetime.fromtimestamp(os.stat(el_path).st_mtime).strftime("%Y-%m-%dT%H:%M:%S")
 			})
 
 		#	add klipper macros as virtual files
@@ -448,7 +452,7 @@ class web_dwc2:
 					"type": "f" ,
 					"name": macro_ ,
 					"size": 1 ,
-					"date": time.strftime("%Y-%m-%dT%H:%M:%S") 
+					"date": datetime.datetime.fromtimestamp(os.stat(el_path).st_mtime).strftime("%Y-%m-%dT%H:%M:%S")
 				})
 
 		#	virtual config file
@@ -458,7 +462,7 @@ class web_dwc2:
 				"type": "f",
 				"name": "config.g" ,
 				"size": os.stat(self.klipper_config).st_size ,
-				"date": datetime.datetime.utcfromtimestamp( os.stat(self.klipper_config).st_mtime ).strftime("%Y-%m-%dT%H:%M:%S")
+				"date": datetime.datetime.fromtimestamp(os.stat(el_path).st_mtime).strftime("%Y-%m-%dT%H:%M:%S")
 			})
 
 		return repl_
@@ -1077,7 +1081,6 @@ class web_dwc2:
 				self.sdcard.file_position = 0 											#	postions / size
 				self.sdcard.file_size = os.stat(fullpath).st_size
 			else:
-				import pdb; pdb.set_trace()
 				raise 'gcodefile' + fullpath + ' not found'
 
 		self.file_infos['running_file'] = self.rr_fileinfo('knackwurst').result()
@@ -1298,8 +1301,7 @@ class web_dwc2:
 		if self.bed_mesh:
 
 			hmap = []
-			self.configfile.getsection("virtual_sdcard").get("path", None)
-			z_matrix = self.bed_mesh.calibrate.probed_z_table
+			z_matrix = self.bed_mesh.z_mesh.mesh_matrix
 			mesh_data = self.bed_mesh.z_mesh				#	see def print_mesh in bed_mesh.py line 572
 
 			meane_ = round( calc_mean(z_matrix), 3)
@@ -1495,7 +1497,7 @@ class web_dwc2:
 
 		def calc_time(in_):
 			if in_ == -1: return in_
-			#import pdb; pdb.set_trace()
+
 			h_str = re.search(re.compile('(\d+(\s)?hours|\d+(\s)?h)'),in_)
 			m_str = re.search(re.compile('(([0-9]*\.[0-9]+)\sminutes|\d+(\s)?m)'),in_)
 			s_str = re.search(re.compile('(\d+(\s)?seconds|\d+(\s)?s)'),in_)
@@ -1511,24 +1513,29 @@ class web_dwc2:
 
 			return dursecs
 
-		#	get 4k lines from file
+		#	read 20k bytes from each side
+		f_size = os.stat(path_).st_size
+		seek_amount = min( f_size , 20000 )
+
 		with open(path_, 'rb') as f:
-			cont_ = f.readlines()			#	gimme the whole file
-		int_ = cont_[:2000] + cont_[-2000:] 	# 	build up header and footer
-		pile = " ".join(int_)					#	build a big pile for regex
+			cont_ = f.readlines(seek_amount)        #    gimme the first chunk
+			f.seek(0, os.SEEK_END)                #     find the end
+			f.seek(seek_amount*-1,os.SEEK_CUR)        #    back up some
+			cont_ = cont_+ f.readlines()            #    read the remainder
+
+		pile = " ".join(cont_)
+
 		#	determine slicer
 		sl = -1
 
 		for regex in slicers:
 			#	resource gunner ?
 			if re.compile(regex).search(pile):
-				#import pdb; pdb.set_trace()
 				meta['slicer'] = re.search(re.compile(regex),pile).group()
 				sl = slicers.index(regex)
 				break
 		#	only grab metadata if we found a slicer
 		if sl > -1 :
-			#import pdb; pdb.set_trace()
 			if objects_h[sl] != "":
 				try:
 					matches = re.findall(objects_h[sl], pile )
