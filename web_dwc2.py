@@ -32,7 +32,6 @@ class web_dwc2:
 		self.klipper_ready = False
 		self.popup = None
 		self.message = None
-		self.serial = serial.Serial(config.get("serial_path", "/tmp/printer" ), 250000, timeout=0.050)
 		#	get config
 		self.config = config
 		self.adress = config.get( 'listen_adress', "127.0.0.1" )
@@ -45,7 +44,7 @@ class web_dwc2:
 		self.printer = config.get_printer()
 		self.reactor = self.printer.get_reactor()
 		self.gcode = self.printer.lookup_object('gcode')
-		self.gcode.respond_raw = self.respond_raw			#	make changes we need to gcode.py
+		self.gcode_io = self.printer.lookup_object("gcode_io")
 		self.configfile = self.printer.lookup_object('configfile').read_main_config()
 		self.stepper_enable = self.printer.load_object(config, "stepper_enable")
 		#	gcode execution needs
@@ -69,6 +68,7 @@ class web_dwc2:
 		if not os.path.isfile( self.web_root + "/" + "index.html" ):
 			logging.error( "DWC2 failed to start, no webif found in " + self.web_root )
 			return
+		self.gcode.register_output_handler(self.gcode_response)
 		# manage client sessions
 		self.sessions = {}
 		self.status_0 = {}
@@ -559,7 +559,7 @@ class web_dwc2:
 			dst_ = self.sdpath + web_.get_argument('new').replace("0:", "")
 
 		try:
-			shutil.copyfile( src_ , dst_)
+			shutil.move( src_ , dst_)
 		except Exception as e:
 			return {"err": 1}
 
@@ -1061,7 +1061,7 @@ class web_dwc2:
 
 		#	file dwc1 - 'zzz/simplify3D41.gcode'
 		#	file dwc2 - '/gcodes/zzz/simplify3D41.gcode'
-
+		logging.info( "this works for me" )
 		file = '/'.join(params['#original'].split(' ')[1:])
 		if '/gcodes/' not in file:	#	DWC 1 work arround
 			fullpath = self.sdpath + '/gcodes/' + params['#original'].split()[1]
@@ -1273,7 +1273,8 @@ class web_dwc2:
 		if bed_mesh.z_mesh:
 
 			hmap = []
-			z_matrix = bed_mesh.z_mesh.mesh_matrix
+			#z_matrix = bed_mesh.z_mesh.mesh_matrix
+			z_matrix = bed_mesh.z_mesh.probed_matrix
 			mesh_data = bed_mesh.z_mesh				#	see def print_mesh in bed_mesh.py line 572
 
 			meane_ = round( calc_mean(z_matrix), 3)
@@ -1319,7 +1320,7 @@ class web_dwc2:
 			self.klipper_ready = False
 			return 'O'
 
-		if self.gcode.is_processing_data or self.gcode.get_status()['busy']:
+		if self.gcode_io.is_processing_data:
 			state = 'B'
 
 		if self.sdcard.current_file:
@@ -1565,19 +1566,6 @@ class web_dwc2:
 		}
 
 		dict_.put(repl_)
-	#	function that overwrites klippers original
-	def respond_raw(self, msg):
-		if self.gcode.is_fileinput:
-			return
-		try:
-			#	prevent serial overflow if octoprint disconnects
-			if self.serial.in_waiting < 500:
-				os.write(self.gcode.fd, msg+"\n")
-			#	prevent reply overflow if user closes webif
-			if len(self.gcode_reply) < 100:
-				self.gcode_response(msg+"\n")
-		except os.error:
-			logging.exception("Write g-code response")
 	#	setting message
 	def set_message(self, msg='msg'):
 		self.message = {
