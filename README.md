@@ -1,3 +1,10 @@
+# DO NOT USE THIS ANYMORE!
+# This is only here for refference. please use:
+[Socket version](https://github.com/Stephan3/dwc2-for-klipper-socket)
+
+
+--------------------------------------------------
+
 # dwc2-for-klipper
 
 A translator between [DWC2](https://github.com/Duet3D/DuetWebControl) and Klipper
